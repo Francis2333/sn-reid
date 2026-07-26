@@ -365,7 +365,7 @@ class Engine(object):
         batch_time = AverageMeter()
 
         def _feature_extraction(data_loader):
-            f_, pids_, camids_ = [], [], []
+            f_, pids_, camids_, teamids_ = [], [], [], []
             for batch_idx, data in enumerate(data_loader):
                 imgs, pids, camids = self.parse_data_for_eval(data)
                 if self.use_gpu:
@@ -377,17 +377,25 @@ class Engine(object):
                 f_.append(features)
                 pids_.extend(pids)
                 camids_.extend(camids)
+                if 'teamid' in data:
+                    teamids = data['teamid']
+                    if torch.is_tensor(teamids):
+                        teamids = teamids.cpu().numpy().tolist()
+                    teamids_.extend(teamids)
+                else:
+                    teamids_.extend([-1] * len(pids))
             f_ = torch.cat(f_, 0)
             pids_ = np.asarray(pids_)
             camids_ = np.asarray(camids_)
-            return f_, pids_, camids_
+            teamids_ = np.asarray(teamids_)
+            return f_, pids_, camids_, teamids_
 
         print('Extracting features from query set ...')
-        qf, q_pids, q_camids = _feature_extraction(query_loader)
+        qf, q_pids, q_camids, q_teamids = _feature_extraction(query_loader)
         print('Done, obtained {}-by-{} matrix'.format(qf.size(0), qf.size(1)))
 
         print('Extracting features from gallery set ...')
-        gf, g_pids, g_camids = _feature_extraction(gallery_loader)
+        gf, g_pids, g_camids, g_teamids = _feature_extraction(gallery_loader)
         print('Done, obtained {}-by-{} matrix'.format(gf.size(0), gf.size(1)))
 
         print('Speed: {:.4f} sec/batch'.format(batch_time.avg))
@@ -439,6 +447,38 @@ class Engine(object):
             print('CMC curve')
             for r in ranks:
                 print('Rank-{:<3}: {:.1%}'.format(r, cmc[r - 1]))
+
+            if np.any(q_teamids >= 0) and np.any(g_teamids >= 0):
+                max_team_rank = max(ranks)
+                for teammate_only, title in [
+                    (False, 'Team-inclusive'),
+                    (True, 'Teammate-only'),
+                ]:
+                    team_cmc, team_mAP, num_valid = (
+                        metrics.evaluate_team_rank(
+                            distmat,
+                            q_pids,
+                            g_pids,
+                            q_camids,
+                            g_camids,
+                            q_teamids,
+                            g_teamids,
+                            max_rank=max_team_rank,
+                            teammate_only=teammate_only,
+                        )
+                    )
+                    print('** {} Results **'.format(title))
+                    print(
+                        'Valid queries: {}'.format(num_valid)
+                    )
+                    print('mAP: {:.1%}'.format(team_mAP))
+                    for r in ranks:
+                        print(
+                            'Rank-{:<3}: {:.1%}'.format(
+                                r,
+                                team_cmc[r - 1],
+                            )
+                        )
             return cmc[0], mAP
         else:
             print("Couldn't compute CMC and mAP because of hidden identity labels.")

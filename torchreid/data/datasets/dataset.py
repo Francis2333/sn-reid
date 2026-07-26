@@ -106,11 +106,15 @@ class Dataset(object):
         """Adds two datasets together (only the train set)."""
         train = copy.deepcopy(self.train)
 
-        for img_path, pid, camid, dsetid in other.train:
+        for items in other.train:
+            img_path, pid, camid, dsetid = items[:4]
+            extra_fields = items[4:]
             pid += self.num_train_pids
             camid += self.num_train_cams
             dsetid += self.num_datasets
-            train.append((img_path, pid, camid, dsetid))
+            train.append(
+                (img_path, pid, camid, dsetid) + tuple(extra_fields)
+            )
 
         ###################################
         # Note that
@@ -203,11 +207,15 @@ class Dataset(object):
         pid2label = {pid: i for i, pid in enumerate(g_pids)}
 
         def _combine_data(data):
-            for img_path, pid, camid, dsetid in data:
+            for items in data:
+                img_path, pid, camid, dsetid = items[:4]
+                extra_fields = items[4:]
                 if pid in self._junk_pids:
                     continue
                 pid = pid2label[pid] + self.num_train_pids
-                combined.append((img_path, pid, camid, dsetid))
+                combined.append(
+                    (img_path, pid, camid, dsetid) + tuple(extra_fields)
+                )
 
         _combine_data(self.query)
         _combine_data(self.gallery)
@@ -326,7 +334,8 @@ class ImageDataset(Dataset):
         super(ImageDataset, self).__init__(train, query, gallery, **kwargs)
 
     def __getitem__(self, index):
-        img_path, pid, camid, dsetid = self.data[index]
+        fields = self.data[index]
+        img_path, pid, camid, dsetid = fields[:4]
         img = read_image(img_path)
         if self.transform is not None:
             img = self._transform_image(self.transform, self.k_tfm, img)
@@ -337,6 +346,8 @@ class ImageDataset(Dataset):
             'impath': img_path,
             'dsetid': dsetid
         }
+        if len(fields) > 4:
+            item['teamid'] = fields[4]
         return item
 
     def show_summary(self):

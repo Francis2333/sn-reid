@@ -13,6 +13,12 @@ class Soccernetv3(ImageDataset):
     evaluation.
     """
     dataset_dir = 'soccernetv3'
+    TEAM_CLASS_TO_ID = {
+        'player_team_left': 0,
+        'goalkeeper_team_left': 0,
+        'player_team_right': 1,
+        'goalkeeper_team_right': 1,
+    }
 
     def __init__(self, root='', soccernetv3_training_subset=1.0, **kwargs):
         assert 1.0 >= soccernetv3_training_subset > 0.0
@@ -53,6 +59,7 @@ class Soccernetv3(ImageDataset):
             info = self.extract_sample_info(filename)
             pid = info["person_uid"]
             action_idx = info["action_idx"]
+            teamid = self.get_team_id(info.get("clazz"))
             if action_idx >= end_action:
                 break
             if relabel:
@@ -60,7 +67,7 @@ class Soccernetv3(ImageDataset):
                     pid2label[pid] = ids_counter
                     ids_counter += 1
                 pid = pid2label[pid]
-            data.append((img_path, pid, action_idx))
+            data.append((img_path, pid, action_idx, 0, teamid))
 
         return data, pid2label, ids_counter
 
@@ -130,6 +137,12 @@ class Soccernetv3(ImageDataset):
     def get_bbox_index(filepath):
         return int(os.path.basename(filepath).split("-")[0])
 
+    @classmethod
+    def get_team_id(cls, clazz):
+        if clazz is None:
+            return -1
+        return cls.TEAM_CLASS_TO_ID.get(clazz.lower(), -1)
+
 
 class Soccernetv3Test(Soccernetv3):
     """ Soccernet-v3 test set. Can be used as "target" set in the run configs (cfg.data.targets) for performance evaluation.
@@ -191,6 +204,14 @@ class Soccernetv3Challenge(Soccernetv3):
         for img_path in img_paths:
             filename = os.path.basename(img_path)
             info = self.extract_sample_info(filename)
-            data.append((img_path, (info["bbox_idx"]), info["action_idx"]))
+            data.append(
+                (
+                    img_path,
+                    info["bbox_idx"],
+                    info["action_idx"],
+                    0,
+                    -1,
+                )
+            )
 
         return data, pid2label, ids_counter
