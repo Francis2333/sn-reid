@@ -1,10 +1,10 @@
-numpy
+numpy==1.26.4
 Cython
 h5py
 Pillow
 six
 scipy
-opencv-python
+opencv-python==4.8.1.78
 matplotlib
 tb-nightly
 future
@@ -15,3 +15,5 @@ yapf
 isort==4.3.21
 imageio
 soccernet~=0.1.25
+huggingface_hub==0.23.5
+setuptools==69.5.1
