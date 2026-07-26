@@ -2,6 +2,7 @@ from __future__ import absolute_import
 import torch
 
 from .pcb import *
+from .pcb_resnet50 import *
 from .mlfn import *
 from .hacnn import *
 from .osnet import *
@@ -65,6 +66,7 @@ __model_factory = {
     'hacnn': HACNN,
     'pcb_p6': pcb_p6,
     'pcb_p4': pcb_p4,
+    'pcb_resnet50_p3': pcb_resnet50_p3,
     'mlfn': mlfn,
     'osnet_x1_0': osnet_x1_0,
     'osnet_x0_75': osnet_x0_75,
