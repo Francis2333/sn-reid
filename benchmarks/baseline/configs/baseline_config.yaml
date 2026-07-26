@@ -4,9 +4,10 @@ model:
 data:
   type: 'image'
   root: 'datasets' # SoccerNet train/test/valid/challenge sets will be downloaded under '/path/to/project/datasets/soccernetv3/reid/'
-  height: 256
-  width: 128
-  workers: 4
+  height: 320
+  width: 160
+  workers: 8
+  transforms: ['random_flip', 'random_crop', 'random_rotation', 'color_jitter', 'gaussian_blur', 'random_erase']
   sources: ['soccernetv3']
   targets: ['soccernetv3', 'soccernetv3_test', 'soccernetv3_challenge']
   # training and validation sets are in the 'soccernetv3' dataset
@@ -14,7 +15,7 @@ data:
   # challenge set is in the 'soccernetv3_challenge' dataset
 
 soccernetv3:
-  training_subset: 0.01 # train model on 1% of training set samples
+  training_subset: 1.0
 
 sampler:
   train_sampler: RandomIdentitySampler
@@ -31,9 +32,10 @@ loss:
     weight_x: 0.5
 
 train:
-  batch_size: 32
+  batch_size: 64
   print_freq: 10
-  max_epoch: 10
+  max_epoch: 15
+  stepsize: [10]
 
 test:
   ranks: [1]

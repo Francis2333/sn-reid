@@ -3,7 +3,7 @@ import math
 import random
 from collections import deque
 import torch
-from PIL import Image
+from PIL import Image, ImageFilter
 from torchvision.transforms import (
     Resize, Compose, ToTensor, Normalize, ColorJitter, RandomHorizontalFlip
 )
@@ -48,6 +48,44 @@ class Random2DTranslation(object):
         return croped_img
 
 
+class RandomRotation(object):
+    """Randomly rotates a PIL image while filling exposed corners."""
+
+    def __init__(
+        self,
+        degrees=15,
+        interpolation=Image.BILINEAR,
+        fill=(124, 116, 104),
+    ):
+        if degrees < 0:
+            raise ValueError('degrees must be non-negative')
+        self.degrees = degrees
+        self.interpolation = interpolation
+        self.fill = tuple(fill)
+
+    def __call__(self, img):
+        angle = random.uniform(-self.degrees, self.degrees)
+        return img.rotate(
+            angle,
+            resample=self.interpolation,
+            fillcolor=self.fill,
+        )
+
+
+class RandomGaussianBlur(object):
+    """Applies a mild Gaussian blur to a PIL image with a probability."""
+
+    def __init__(self, p=0.2, radius=(0.1, 1.5)):
+        self.p = p
+        self.radius = radius
+
+    def __call__(self, img):
+        if random.uniform(0, 1) > self.p:
+            return img
+        radius = random.uniform(self.radius[0], self.radius[1])
+        return img.filter(ImageFilter.GaussianBlur(radius=radius))
+
+
 class RandomErasing(object):
     """Randomly erases an image patch.
 
@@ -71,7 +109,7 @@ class RandomErasing(object):
         sl=0.02,
         sh=0.4,
         r1=0.3,
-        mean=[0.4914, 0.4822, 0.4465]
+        mean=[0.0, 0.0, 0.0]
     ):
         self.probability = probability
         self.mean = mean
@@ -290,6 +328,11 @@ def build_transforms(
         )
         transform_tr += [Random2DTranslation(height, width)]
 
+    if 'random_rotation' in transforms:
+        print('+ random rotation (degrees=15)')
+        fill = [int(round(value * 255)) for value in norm_mean]
+        transform_tr += [RandomRotation(degrees=15, fill=fill)]
+
     if 'random_patch' in transforms:
         print('+ random patch')
         transform_tr += [RandomPatch()]
@@ -300,6 +343,10 @@ def build_transforms(
             ColorJitter(brightness=0.2, contrast=0.15, saturation=0, hue=0)
         ]
 
+    if 'gaussian_blur' in transforms:
+        print('+ gaussian blur (probability=0.2)')
+        transform_tr += [RandomGaussianBlur(p=0.2)]
+
     print('+ to torch tensor of range [0, 1]')
     transform_tr += [ToTensor()]
 
@@ -308,7 +355,7 @@ def build_transforms(
 
     if 'random_erase' in transforms:
         print('+ random erase')
-        transform_tr += [RandomErasing(mean=norm_mean)]
+        transform_tr += [RandomErasing(mean=[0.0, 0.0, 0.0])]
 
     transform_tr = Compose(transform_tr)
 

@@ -1,0 +1,38 @@
+model:
+  name: 'resnet50_fc512'
+
+data:
+  type: 'image'
+  root: 'datasets'
+  height: 256
+  width: 128
+  workers: 4
+  sources: ['soccernetv3']
+  targets: ['soccernetv3']
+  transforms: ['random_flip']
+
+soccernetv3:
+  training_subset: 0.15
+
+sampler:
+  train_sampler: RandomIdentitySampler
+  train_sampler_t: RandomIdentitySampler
+  num_instances: 4
+
+loss:
+  name: 'triplet'
+  softmax:
+    label_smooth: True
+  triplet:
+    margin: 0.3
+    weight_t: 0.5
+    weight_x: 0.5
+
+train:
+  batch_size: 32
+  max_epoch: 15
+  stepsize: [10]
+
+test:
+  ranks: [1, 5, 10]
+  export_ranking_results: False
