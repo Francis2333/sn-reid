@@ -14,69 +14,184 @@ except ImportError:
     )
 
 
-def eval_soccernetv3(distmat, q_pids, g_pids, q_action_indices, g_action_indices, max_rank):
-    """Evaluation with market1501 metric
-    Key: for each query identity, its gallery images from the same camera view are discarded.
+# def eval_soccernetv3(distmat, q_pids, g_pids, q_action_indices, g_action_indices, max_rank):
+#     """Evaluation with market1501 metric
+#     Key: for each query identity, its gallery images from the same camera view are discarded.
+#     """
+#     num_q, num_g = distmat.shape
+
+#     if num_g < max_rank:
+#         max_rank = num_g
+#         print(
+#             'Note: number of gallery samples is quite small, got {}'.
+#             format(num_g)
+#         )
+
+#     indices = np.argsort(distmat, axis=1)
+#     matches = (g_pids[indices] == q_pids[:, np.newaxis]).astype(np.int32)
+
+#     # compute cmc curve for each query
+#     all_cmc = []
+#     all_AP = []
+#     num_valid_q = 0. # number of valid query
+#     smallest_ranking_size = max_rank
+
+#     for q_idx in range(num_q):
+#         # get query pid and action_idx
+#         q_pid = q_pids[q_idx]
+#         q_action_idx = q_action_indices[q_idx]
+
+#         # remove gallery samples from different action than the query
+#         order = indices[q_idx]
+#         remove = (g_action_indices[order] != q_action_idx)
+#         keep = np.invert(remove)
+
+#         # compute cmc curve
+#         raw_cmc = matches[q_idx][
+#             keep] # binary vector, positions with value 1 are correct matches
+#         if not np.any(raw_cmc):
+#             print("Does not appear in gallery: q_idx {} - q_pid {} - q_action_idx {}".format(q_idx, q_pid, q_action_idx))
+#             # this condition is true when query identity does not appear in gallery
+#             continue
+
+#         cmc = raw_cmc.cumsum()
+#         cmc[cmc > 1] = 1
+#         cmc = cmc[:max_rank]
+#         if smallest_ranking_size > cmc.size:
+#             smallest_ranking_size = cmc.size
+
+#         all_cmc.append(cmc)
+#         num_valid_q += 1.
+
+#         # compute average precision
+#         # reference: https://en.wikipedia.org/wiki/Evaluation_measures_(information_retrieval)#Average_precision
+#         num_rel = raw_cmc.sum()
+#         tmp_cmc = raw_cmc.cumsum()
+#         tmp_cmc = [x / (i+1.) for i, x in enumerate(tmp_cmc)]
+#         tmp_cmc = np.asarray(tmp_cmc) * raw_cmc
+#         AP = tmp_cmc.sum() / num_rel
+#         all_AP.append(AP)
+
+#     all_cmc = [np.concatenate((np.array(cmc[:smallest_ranking_size]), np.zeros(max_rank-smallest_ranking_size, dtype=np.int64)))
+#                for cmc in all_cmc] # np.cat(cmc[:smallest_ranking_size], np.zeros(max_rank-smallest_ranking_size))
+#     all_cmc = np.asarray(all_cmc).astype(np.float32)
+#     all_cmc = all_cmc.sum(0) / num_valid_q  # size = 174
+#     mAP = np.mean(all_AP)
+
+#     return all_cmc, mAP
+
+def eval_soccernetv3(
+    distmat,
+    q_pids,
+    g_pids,
+    q_action_indices,
+    g_action_indices,
+    max_rank,
+):
+    """Evaluate SoccerNet ReID one action at a time.
+
+    Each query is ranked only against gallery samples from the same action.
+    This avoids constructing a query-by-all-gallery string matrix.
     """
     num_q, num_g = distmat.shape
 
     if num_g < max_rank:
         max_rank = num_g
         print(
-            'Note: number of gallery samples is quite small, got {}'.
-            format(num_g)
+            "Note: number of gallery samples is quite small, got {}".format(
+                num_g
+            )
         )
 
-    indices = np.argsort(distmat, axis=1)
-    matches = (g_pids[indices] == q_pids[:, np.newaxis]).astype(np.int32)
-
-    # compute cmc curve for each query
     all_cmc = []
     all_AP = []
-    num_valid_q = 0. # number of valid query
+    num_valid_q = 0
     smallest_ranking_size = max_rank
 
     for q_idx in range(num_q):
-        # get query pid and action_idx
         q_pid = q_pids[q_idx]
         q_action_idx = q_action_indices[q_idx]
 
-        # remove gallery samples from different action than the query
-        order = indices[q_idx]
-        remove = (g_action_indices[order] != q_action_idx)
-        keep = np.invert(remove)
+        # SoccerNet only compares samples from the same action.
+        candidate_indices = np.flatnonzero(
+            g_action_indices == q_action_idx
+        )
 
-        # compute cmc curve
-        raw_cmc = matches[q_idx][
-            keep] # binary vector, positions with value 1 are correct matches
+        if candidate_indices.size == 0:
+            print(
+                "No gallery candidates: "
+                "q_idx {} - q_pid {} - q_action_idx {}".format(
+                    q_idx,
+                    q_pid,
+                    q_action_idx,
+                )
+            )
+            continue
+
+        # Sort only the small same-action gallery subset.
+        local_order = np.argsort(
+            distmat[q_idx, candidate_indices]
+        )
+        ranked_indices = candidate_indices[local_order]
+
+        raw_cmc = (
+            g_pids[ranked_indices] == q_pid
+        ).astype(np.int32)
+
         if not np.any(raw_cmc):
-            print("Does not appear in gallery: q_idx {} - q_pid {} - q_action_idx {}".format(q_idx, q_pid, q_action_idx))
-            # this condition is true when query identity does not appear in gallery
+            print(
+                "Does not appear in gallery: "
+                "q_idx {} - q_pid {} - q_action_idx {}".format(
+                    q_idx,
+                    q_pid,
+                    q_action_idx,
+                )
+            )
             continue
 
         cmc = raw_cmc.cumsum()
         cmc[cmc > 1] = 1
         cmc = cmc[:max_rank]
-        if smallest_ranking_size > cmc.size:
-            smallest_ranking_size = cmc.size
+
+        smallest_ranking_size = min(
+            smallest_ranking_size,
+            cmc.size,
+        )
 
         all_cmc.append(cmc)
-        num_valid_q += 1.
+        num_valid_q += 1
 
-        # compute average precision
-        # reference: https://en.wikipedia.org/wiki/Evaluation_measures_(information_retrieval)#Average_precision
         num_rel = raw_cmc.sum()
-        tmp_cmc = raw_cmc.cumsum()
-        tmp_cmc = [x / (i+1.) for i, x in enumerate(tmp_cmc)]
-        tmp_cmc = np.asarray(tmp_cmc) * raw_cmc
-        AP = tmp_cmc.sum() / num_rel
-        all_AP.append(AP)
+        precision = raw_cmc.cumsum() / (
+            np.arange(raw_cmc.size) + 1.0
+        )
+        average_precision = (
+            precision * raw_cmc
+        ).sum() / num_rel
 
-    all_cmc = [np.concatenate((np.array(cmc[:smallest_ranking_size]), np.zeros(max_rank-smallest_ranking_size, dtype=np.int64)))
-               for cmc in all_cmc] # np.cat(cmc[:smallest_ranking_size], np.zeros(max_rank-smallest_ranking_size))
-    all_cmc = np.asarray(all_cmc).astype(np.float32)
-    all_cmc = all_cmc.sum(0) / num_valid_q  # size = 174
-    mAP = np.mean(all_AP)
+        all_AP.append(average_precision)
+
+    assert num_valid_q > 0, (
+        "Error: all query identities do not appear in gallery"
+    )
+
+    # Preserve the original repository's CMC aggregation behavior.
+    all_cmc = [
+        np.concatenate(
+            (
+                np.asarray(cmc[:smallest_ranking_size]),
+                np.zeros(
+                    max_rank - smallest_ranking_size,
+                    dtype=np.int64,
+                ),
+            )
+        )
+        for cmc in all_cmc
+    ]
+
+    all_cmc = np.asarray(all_cmc, dtype=np.float32)
+    all_cmc = all_cmc.sum(axis=0) / num_valid_q
+    mAP = float(np.mean(all_AP))
 
     return all_cmc, mAP
 
