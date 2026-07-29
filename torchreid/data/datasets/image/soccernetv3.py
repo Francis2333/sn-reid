@@ -50,9 +50,16 @@ class Soccernetv3(ImageDataset):
         # sort images list such that each sample position in the list match its filename index
         img_paths.sort(key=lambda img_path: self.get_bbox_index(img_path))
 
-        # if soccernetv3_training_subset is set, use samples from action '0' to action 'end_action'
-        action_num = self.extract_sample_info(os.path.basename(img_paths[-1]))["action_idx"] + 1
-        end_action = action_num * soccernetv3_training_subset
+        # Select a fraction of the distinct actions. Action indices are not
+        # guaranteed to be contiguous or ordered like bounding-box indices.
+        action_indices = sorted({
+            self.extract_sample_info(os.path.basename(img_path))["action_idx"]
+            for img_path in img_paths
+        })
+        num_actions = max(
+            1, int(len(action_indices) * soccernetv3_training_subset)
+        )
+        selected_actions = set(action_indices[:num_actions])
 
         for img_path in img_paths:
             filename = os.path.basename(img_path)
@@ -60,8 +67,8 @@ class Soccernetv3(ImageDataset):
             pid = info["person_uid"]
             action_idx = info["action_idx"]
             teamid = self.get_team_id(info.get("clazz"))
-            if action_idx >= end_action:
-                break
+            if action_idx not in selected_actions:
+                continue
             if relabel:
                 if pid not in pid2label:
                     pid2label[pid] = ids_counter
