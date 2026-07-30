@@ -45,6 +45,7 @@ def get_default_config():
     cfg.sampler.train_sampler = 'RandomIdentitySampler' # sampler for source train loader
     cfg.sampler.train_sampler_t = 'RandomIdentitySampler' # sampler for target train loader
     cfg.sampler.num_instances = 4 # number of instances per identity for RandomIdentitySampler
+    cfg.sampler.num_actions = 1 # number of actions per batch for RandomActionIdentitySampler
     cfg.sampler.num_cams = 1 # number of cameras to sample in a batch (for RandomDomainSampler)
     cfg.sampler.num_datasets = 1 # number of datasets to sample in a batch (for RandomDatasetSampler)
 
@@ -61,6 +62,7 @@ def get_default_config():
     cfg.train.weight_decay = 5e-4
     cfg.train.max_epoch = 60
     cfg.train.start_epoch = 0
+    cfg.train.checkpoint_freq = 5 # save every N epochs; 0 disables periodic saves
     cfg.train.batch_size = 32
     cfg.train.fixbase_epoch = 0 # number of epochs to fix base layers
     cfg.train.open_layers = [
@@ -95,6 +97,7 @@ def get_default_config():
     cfg.loss.triplet.margin = 0.3 # distance margin
     cfg.loss.triplet.weight_t = 1. # weight to balance hard triplet loss
     cfg.loss.triplet.weight_x = 0. # weight to balance cross entropy loss
+    cfg.loss.triplet.action_aware = False # restrict triplet mining to samples from the same action
 
     # test
     cfg.test = CN()
@@ -133,6 +136,7 @@ def imagedata_kwargs(cfg):
         'batch_size_test': cfg.test.batch_size,
         'workers': cfg.data.workers,
         'num_instances': cfg.sampler.num_instances,
+        'num_actions': cfg.sampler.num_actions,
         'num_cams': cfg.sampler.num_cams,
         'num_datasets': cfg.sampler.num_datasets,
         'train_sampler': cfg.sampler.train_sampler,
@@ -202,6 +206,7 @@ def engine_run_kwargs(cfg):
         'save_dir': cfg.data.save_dir,
         'max_epoch': cfg.train.max_epoch,
         'start_epoch': cfg.train.start_epoch,
+        'checkpoint_freq': cfg.train.checkpoint_freq,
         'fixbase_epoch': cfg.train.fixbase_epoch,
         'open_layers': cfg.train.open_layers,
         'start_eval': cfg.test.start_eval,

@@ -20,6 +20,8 @@ class ImageTripletEngine(Engine):
         scheduler (LRScheduler, optional): if None, no learning rate decay will be performed.
         use_gpu (bool, optional): use gpu. Default is True.
         label_smooth (bool, optional): use label smoothing regularizer. Default is True.
+        action_aware (bool, optional): mine triplet positives and negatives
+            only within the same action. Default is False.
 
     Examples::
         
@@ -69,7 +71,8 @@ class ImageTripletEngine(Engine):
         weight_x=1,
         scheduler=None,
         use_gpu=True,
-        label_smooth=True
+        label_smooth=True,
+        action_aware=False
     ):
         super(ImageTripletEngine, self).__init__(datamanager, use_gpu)
 
@@ -82,6 +85,7 @@ class ImageTripletEngine(Engine):
         assert weight_t + weight_x > 0
         self.weight_t = weight_t
         self.weight_x = weight_x
+        self.action_aware = action_aware
 
         self.criterion_t = TripletLoss(margin=margin)
         self.criterion_x = CrossEntropyLoss(
@@ -92,10 +96,13 @@ class ImageTripletEngine(Engine):
 
     def forward_backward(self, data):
         imgs, pids = self.parse_data_for_train(data)
+        action_ids = data['camid'] if self.action_aware else None
 
         if self.use_gpu:
             imgs = imgs.cuda()
             pids = pids.cuda()
+            if action_ids is not None:
+                action_ids = action_ids.cuda()
 
         outputs, features = self.model(imgs)
 
@@ -103,7 +110,13 @@ class ImageTripletEngine(Engine):
         loss_summary = {}
 
         if self.weight_t > 0:
-            loss_t = self.compute_loss(self.criterion_t, features, pids)
+            if isinstance(features, (tuple, list)):
+                loss_t = sum(
+                    self.criterion_t(feature, pids, action_ids)
+                    for feature in features
+                ) / len(features)
+            else:
+                loss_t = self.criterion_t(features, pids, action_ids)
             loss += self.weight_t * loss_t
             loss_summary['loss_t'] = loss_t.item()
 

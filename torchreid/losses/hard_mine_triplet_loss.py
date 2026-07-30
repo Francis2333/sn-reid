@@ -20,11 +20,14 @@ class TripletLoss(nn.Module):
         self.margin = margin
         self.ranking_loss = nn.MarginRankingLoss(margin=margin)
 
-    def forward(self, inputs, targets):
+    def forward(self, inputs, targets, action_ids=None):
         """
         Args:
             inputs (torch.Tensor): feature matrix with shape (batch_size, feat_dim).
             targets (torch.LongTensor): ground truth labels with shape (num_classes).
+            action_ids (torch.LongTensor, optional): action identifier for each
+                sample. When provided, positives and negatives are mined only
+                within the same action.
         """
         n = inputs.size(0)
 
@@ -35,11 +38,30 @@ class TripletLoss(nn.Module):
         dist = dist.clamp(min=1e-12).sqrt() # for numerical stability
 
         # For each anchor, find the hardest positive and negative
-        mask = targets.expand(n, n).eq(targets.expand(n, n).t())
+        same_pid = targets.expand(n, n).eq(targets.expand(n, n).t())
+        if action_ids is None:
+            positive_mask = same_pid
+            negative_mask = ~same_pid
+        else:
+            same_action = action_ids.expand(n, n).eq(
+                action_ids.expand(n, n).t()
+            )
+            positive_mask = same_pid & same_action
+            negative_mask = (~same_pid) & same_action
+
+        if not negative_mask.any(dim=1).all():
+            raise ValueError(
+                'Each anchor needs a different identity in its action'
+            )
+
         dist_ap, dist_an = [], []
         for i in range(n):
-            dist_ap.append(dist[i][mask[i]].max().unsqueeze(0))
-            dist_an.append(dist[i][mask[i] == 0].min().unsqueeze(0))
+            dist_ap.append(
+                dist[i][positive_mask[i]].max().unsqueeze(0)
+            )
+            dist_an.append(
+                dist[i][negative_mask[i]].min().unsqueeze(0)
+            )
         dist_ap = torch.cat(dist_ap)
         dist_an = torch.cat(dist_an)
 

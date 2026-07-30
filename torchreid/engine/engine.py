@@ -116,6 +116,7 @@ class Engine(object):
         save_dir='log',
         max_epoch=0,
         start_epoch=0,
+        checkpoint_freq=5,
         print_freq=10,
         fixbase_epoch=0,
         open_layers=None,
@@ -137,6 +138,9 @@ class Engine(object):
             save_dir (str): directory to save model.
             max_epoch (int): maximum epoch.
             start_epoch (int, optional): starting epoch. Default is 0.
+            checkpoint_freq (int, optional): save a training checkpoint every
+                N epochs. Set to 0 to disable periodic checkpoints. The final
+                epoch is always saved before evaluation. Default is 5.
             print_freq (int, optional): print_frequency. Default is 10.
             fixbase_epoch (int, optional): number of epochs to train ``open_layers`` (new layers)
                 while keeping base layers frozen. Default is 0. ``fixbase_epoch`` is counted
@@ -184,6 +188,8 @@ class Engine(object):
         time_start = time.time()
         self.start_epoch = start_epoch
         self.max_epoch = max_epoch
+        last_checkpoint_epoch = None
+        best_rank1 = float('-inf')
         print('=> Start training')
 
         for self.epoch in range(self.start_epoch, self.max_epoch):
@@ -193,6 +199,8 @@ class Engine(object):
                 open_layers=open_layers
             )
 
+            rank1 = 0.
+            checkpoint_saved = False
             if (self.epoch + 1) >= start_eval \
                and eval_freq > 0 \
                and (self.epoch+1) % eval_freq == 0 \
@@ -206,9 +214,27 @@ class Engine(object):
                     eval_metric=eval_metric,
                     ranks=ranks
                 )
+                is_best = rank1 > best_rank1
+                best_rank1 = max(best_rank1, rank1)
+                self.save_model(
+                    self.epoch, rank1, save_dir, is_best=is_best
+                )
+                last_checkpoint_epoch = self.epoch
+                checkpoint_saved = True
+
+            if checkpoint_freq > 0 \
+               and (self.epoch + 1) % checkpoint_freq == 0 \
+               and not checkpoint_saved:
                 self.save_model(self.epoch, rank1, save_dir)
+                last_checkpoint_epoch = self.epoch
 
         if self.max_epoch > 0:
+            # Evaluation can be substantially more memory- and I/O-intensive
+            # than training. Save first so a failed final test does not discard
+            # all training progress.
+            if last_checkpoint_epoch != self.epoch:
+                self.save_model(self.epoch, 0., save_dir)
+
             print('=> Final test')
             rank1 = self.test(
                 dist_metric=dist_metric,
@@ -220,7 +246,10 @@ class Engine(object):
                 ranks=ranks,
                 export_ranking_results=export_ranking_results
             )
-            self.save_model(self.epoch, rank1, save_dir)
+            is_best = rank1 > best_rank1
+            self.save_model(
+                self.epoch, rank1, save_dir, is_best=is_best
+            )
 
         elapsed = round(time.time() - time_start)
         elapsed = str(datetime.timedelta(seconds=elapsed))

@@ -115,6 +115,8 @@ class ImageDataManager(DataManager):
         workers (int, optional): number of workers. Default is 4.
         num_instances (int, optional): number of instances per identity in a batch.
             Default is 4.
+        num_actions (int, optional): number of actions per batch when using
+            ``RandomActionIdentitySampler``. Default is 1.
         num_cams (int, optional): number of cameras to sample in a batch (when using
             ``RandomDomainSampler``). Default is 1.
         num_datasets (int, optional): number of datasets to sample in a batch (when
@@ -171,6 +173,7 @@ class ImageDataManager(DataManager):
         batch_size_test=32,
         workers=4,
         num_instances=4,
+        num_actions=1,
         num_cams=1,
         num_datasets=1,
         train_sampler='RandomSampler',
@@ -221,6 +224,7 @@ class ImageDataManager(DataManager):
                 train_sampler,
                 batch_size=batch_size_train,
                 num_instances=num_instances,
+                num_actions=num_actions,
                 num_cams=num_cams,
                 num_datasets=num_datasets
             ),
@@ -263,6 +267,7 @@ class ImageDataManager(DataManager):
                     train_sampler_t,
                     batch_size=batch_size_train,
                     num_instances=num_instances,
+                    num_actions=num_actions,
                     num_cams=num_cams,
                     num_datasets=num_datasets
                 ),

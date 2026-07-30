@@ -6,8 +6,9 @@ from collections import defaultdict
 from torch.utils.data.sampler import Sampler, RandomSampler, SequentialSampler
 
 AVAI_SAMPLERS = [
-    'RandomIdentitySampler', 'SequentialSampler', 'RandomSampler',
-    'RandomDomainSampler', 'RandomDatasetSampler'
+    'RandomIdentitySampler', 'RandomActionIdentitySampler',
+    'SequentialSampler', 'RandomSampler', 'RandomDomainSampler',
+    'RandomDatasetSampler'
 ]
 
 
@@ -75,6 +76,136 @@ class RandomIdentitySampler(Sampler):
                 final_idxs.extend(batch_idxs)
                 if len(batch_idxs_dict[pid]) == 0:
                     avai_pids.remove(pid)
+
+        return iter(final_idxs)
+
+    def __len__(self):
+        return self.length
+
+
+class RandomActionIdentitySampler(Sampler):
+    """Samples several identities from each of several actions per batch.
+
+    SoccerNet stores ``action_idx`` in tuple position 2 (``camid``). Each
+    identity is used once per epoch. Identities with too few images are sampled
+    with replacement; identities with more images use a random subset.
+    """
+
+    def __init__(
+        self, data_source, batch_size, num_instances, num_actions
+    ):
+        if num_actions <= 0:
+            raise ValueError('num_actions must be positive')
+        if batch_size % (num_actions * num_instances) != 0:
+            raise ValueError(
+                'batch_size={} must be divisible by num_actions={} * '
+                'num_instances={}'.format(
+                    batch_size, num_actions, num_instances
+                )
+            )
+
+        self.data_source = data_source
+        self.batch_size = batch_size
+        self.num_instances = num_instances
+        self.num_actions = num_actions
+        self.num_pids_per_action = (
+            batch_size // (num_actions * num_instances)
+        )
+
+        self.action_pid_indices = defaultdict(lambda: defaultdict(list))
+        for index, items in enumerate(data_source):
+            pid = items[1]
+            action_idx = items[2]
+            self.action_pid_indices[action_idx][pid].append(index)
+
+        self.actions = [
+            action_idx
+            for action_idx, pid_indices in self.action_pid_indices.items()
+            if len(pid_indices) >= self.num_pids_per_action
+        ]
+        if len(self.actions) < self.num_actions:
+            raise ValueError(
+                'Need at least {} actions with {} identities each, but found '
+                '{}'.format(
+                    self.num_actions,
+                    self.num_pids_per_action,
+                    len(self.actions)
+                )
+            )
+
+        block_counts = [
+            len(self.action_pid_indices[action_idx])
+            // self.num_pids_per_action
+            for action_idx in self.actions
+        ]
+        self.num_batches = self._max_num_batches(block_counts)
+        self.length = self.num_batches * self.batch_size
+
+    def _max_num_batches(self, block_counts):
+        """Maximum batches with at most one block per action in a batch."""
+        upper_bound = sum(block_counts) // self.num_actions
+        for num_batches in range(upper_bound, 0, -1):
+            available_blocks = sum(
+                min(count, num_batches) for count in block_counts
+            )
+            if available_blocks >= num_batches * self.num_actions:
+                return num_batches
+        return 0
+
+    def _sample_instances(self, indices):
+        if len(indices) >= self.num_instances:
+            return random.sample(indices, self.num_instances)
+        sampled = list(indices)
+        sampled.extend(
+            random.choices(
+                indices, k=self.num_instances - len(indices)
+            )
+        )
+        random.shuffle(sampled)
+        return sampled
+
+    def __iter__(self):
+        action_blocks = {}
+        for action_idx in self.actions:
+            pids = list(self.action_pid_indices[action_idx].keys())
+            random.shuffle(pids)
+            blocks = []
+            stop = len(pids) - self.num_pids_per_action + 1
+            for start in range(0, stop, self.num_pids_per_action):
+                selected_pids = pids[
+                    start:start + self.num_pids_per_action
+                ]
+                block = []
+                for pid in selected_pids:
+                    block.extend(
+                        self._sample_instances(
+                            self.action_pid_indices[action_idx][pid]
+                        )
+                    )
+                blocks.append(block)
+            random.shuffle(blocks)
+            action_blocks[action_idx] = blocks
+
+        final_idxs = []
+        for _ in range(self.num_batches):
+            # Selecting actions with the most remaining blocks is a
+            # Havel-Hakimi-style schedule that prevents incomplete batches.
+            available_actions = [
+                action_idx for action_idx, blocks in action_blocks.items()
+                if blocks
+            ]
+            random.shuffle(available_actions)
+            available_actions.sort(
+                key=lambda action_idx: len(action_blocks[action_idx]),
+                reverse=True
+            )
+            selected_actions = available_actions[:self.num_actions]
+            if len(selected_actions) != self.num_actions:
+                raise RuntimeError(
+                    'Action-aware sampler could not construct a full batch'
+                )
+            for action_idx in selected_actions:
+                final_idxs.extend(action_blocks[action_idx].pop())
 
         return iter(final_idxs)
 
@@ -207,6 +338,7 @@ def build_train_sampler(
     train_sampler,
     batch_size=32,
     num_instances=4,
+    num_actions=1,
     num_cams=1,
     num_datasets=1,
     **kwargs
@@ -218,7 +350,9 @@ def build_train_sampler(
         train_sampler (str): sampler name (default: ``RandomSampler``).
         batch_size (int, optional): batch size. Default is 32.
         num_instances (int, optional): number of instances per identity in a
-            batch (when using ``RandomIdentitySampler``). Default is 4.
+            batch (when using an identity sampler). Default is 4.
+        num_actions (int, optional): number of actions per batch (when using
+            ``RandomActionIdentitySampler``). Default is 1.
         num_cams (int, optional): number of cameras to sample in a batch (when using
             ``RandomDomainSampler``). Default is 1.
         num_datasets (int, optional): number of datasets to sample in a batch (when
@@ -229,6 +363,11 @@ def build_train_sampler(
 
     if train_sampler == 'RandomIdentitySampler':
         sampler = RandomIdentitySampler(data_source, batch_size, num_instances)
+
+    elif train_sampler == 'RandomActionIdentitySampler':
+        sampler = RandomActionIdentitySampler(
+            data_source, batch_size, num_instances, num_actions
+        )
 
     elif train_sampler == 'RandomDomainSampler':
         sampler = RandomDomainSampler(data_source, batch_size, num_cams)
