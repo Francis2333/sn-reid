@@ -106,7 +106,6 @@ def eval_soccernetv3(
     all_cmc = []
     all_AP = []
     num_valid_q = 0
-    smallest_ranking_size = max_rank
 
     for q_idx in range(num_q):
         q_pid = q_pids[q_idx]
@@ -153,11 +152,6 @@ def eval_soccernetv3(
         cmc[cmc > 1] = 1
         cmc = cmc[:max_rank]
 
-        smallest_ranking_size = min(
-            smallest_ranking_size,
-            cmc.size,
-        )
-
         all_cmc.append(cmc)
         num_valid_q += 1
 
@@ -175,16 +169,15 @@ def eval_soccernetv3(
         "Error: all query identities do not appear in gallery"
     )
 
-    # Preserve the original repository's CMC aggregation behavior.
+    # Same-action candidate lists have different lengths. Once a valid
+    # query's correct identity has been found, its CMC remains one at every
+    # later rank. Padding with zeros would make the aggregate CMC decrease
+    # (for example Rank-5 < Rank-1), which is mathematically invalid.
     all_cmc = [
-        np.concatenate(
-            (
-                np.asarray(cmc[:smallest_ranking_size]),
-                np.zeros(
-                    max_rank - smallest_ranking_size,
-                    dtype=np.int64,
-                ),
-            )
+        np.pad(
+            np.asarray(cmc[:max_rank]),
+            (0, max_rank - min(cmc.size, max_rank)),
+            mode='edge',
         )
         for cmc in all_cmc
     ]

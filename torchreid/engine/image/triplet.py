@@ -22,6 +22,8 @@ class ImageTripletEngine(Engine):
         label_smooth (bool, optional): use label smoothing regularizer. Default is True.
         action_aware (bool, optional): mine triplet positives and negatives
             only within the same action. Default is False.
+        triplet_warmup_epochs (int, optional): number of initial epochs that
+            optimize cross-entropy only. Default is 0.
 
     Examples::
         
@@ -72,7 +74,8 @@ class ImageTripletEngine(Engine):
         scheduler=None,
         use_gpu=True,
         label_smooth=True,
-        action_aware=False
+        action_aware=False,
+        triplet_warmup_epochs=0
     ):
         super(ImageTripletEngine, self).__init__(datamanager, use_gpu)
 
@@ -86,6 +89,13 @@ class ImageTripletEngine(Engine):
         self.weight_t = weight_t
         self.weight_x = weight_x
         self.action_aware = action_aware
+        if triplet_warmup_epochs < 0:
+            raise ValueError('triplet_warmup_epochs must be non-negative')
+        if triplet_warmup_epochs > 0 and weight_x == 0:
+            raise ValueError(
+                'Triplet warm-up requires a positive cross-entropy weight'
+            )
+        self.triplet_warmup_epochs = triplet_warmup_epochs
 
         self.criterion_t = TripletLoss(margin=margin)
         self.criterion_x = CrossEntropyLoss(
@@ -109,7 +119,11 @@ class ImageTripletEngine(Engine):
         loss = 0
         loss_summary = {}
 
-        if self.weight_t > 0:
+        triplet_active = (
+            self.weight_t > 0
+            and self.epoch >= self.triplet_warmup_epochs
+        )
+        if triplet_active:
             if isinstance(features, (tuple, list)):
                 loss_t = sum(
                     self.criterion_t(feature, pids, action_ids)
@@ -119,12 +133,26 @@ class ImageTripletEngine(Engine):
                 loss_t = self.criterion_t(features, pids, action_ids)
             loss += self.weight_t * loss_t
             loss_summary['loss_t'] = loss_t.item()
+        elif self.weight_t > 0:
+            loss_summary['loss_t'] = 0.
 
         if self.weight_x > 0:
             loss_x = self.compute_loss(self.criterion_x, outputs, pids)
             loss += self.weight_x * loss_x
             loss_summary['loss_x'] = loss_x.item()
             loss_summary['acc'] = metrics.accuracy(outputs, pids)[0].item()
+
+        feature_for_stats = (
+            features[0] if isinstance(features, (tuple, list)) else features
+        )
+        detached_features = feature_for_stats.detach().float()
+        loss_summary['feat_std'] = (
+            detached_features
+            .var(dim=0, unbiased=False)
+            .mean()
+            .sqrt()
+            .item()
+        )
 
         assert loss_summary
 

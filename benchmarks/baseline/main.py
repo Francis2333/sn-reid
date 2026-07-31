@@ -47,7 +47,9 @@ def build_engine(cfg, datamanager, model, optimizer, scheduler):
                 weight_x=cfg.loss.triplet.weight_x,
                 scheduler=scheduler,
                 use_gpu=cfg.use_gpu,
-                label_smooth=cfg.loss.softmax.label_smooth
+                label_smooth=cfg.loss.softmax.label_smooth,
+                action_aware=cfg.loss.triplet.action_aware,
+                triplet_warmup_epochs=cfg.loss.triplet.warmup_epochs
             )
 
     else:

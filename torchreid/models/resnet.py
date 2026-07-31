@@ -308,10 +308,18 @@ class ResNet(nn.Module):
         )
 
         layers = []
-        for dim in fc_dims:
+        for layer_idx, dim in enumerate(fc_dims):
             layers.append(nn.Linear(input_dim, dim))
             layers.append(nn.BatchNorm1d(dim))
-            layers.append(nn.ReLU(inplace=True))
+            # A ReLU on the final metric embedding can enter an all-zero
+            # state. In that state both the classifier and the clamped
+            # triplet distance lose the gradient needed to recover. Keep an
+            # Identity module here so existing Sequential parameter indices
+            # and checkpoints remain compatible.
+            if layer_idx + 1 < len(fc_dims):
+                layers.append(nn.ReLU(inplace=True))
+            else:
+                layers.append(nn.Identity())
             if dropout_p is not None:
                 layers.append(nn.Dropout(p=dropout_p))
             input_dim = dim

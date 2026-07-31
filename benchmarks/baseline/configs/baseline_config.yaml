@@ -29,14 +29,15 @@ loss:
     label_smooth: True
   triplet:
     margin: 0.3
-    weight_t: 0.5
-    weight_x: 0.5
+    weight_t: 0.2
+    weight_x: 1.0
     action_aware: True
+    warmup_epochs: 5
 
 train:
   batch_size: 128
   print_freq: 10
-  checkpoint_freq: 5 # use 1 to save every epoch
+  checkpoint_freq: 1
   max_epoch: 60
   lr_scheduler: cosine
 
@@ -45,6 +46,6 @@ test:
   dist_metric: cosine
   normalize_feature: True
   ranks: [1, 5, 10]
-  start_eval: 20
-  eval_freq: 10
+  start_eval: 5
+  eval_freq: 5
   export_ranking_results: False

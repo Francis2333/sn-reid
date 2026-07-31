@@ -98,6 +98,7 @@ def get_default_config():
     cfg.loss.triplet.weight_t = 1. # weight to balance hard triplet loss
     cfg.loss.triplet.weight_x = 0. # weight to balance cross entropy loss
     cfg.loss.triplet.action_aware = False # restrict triplet mining to samples from the same action
+    cfg.loss.triplet.warmup_epochs = 0 # classification-only epochs before enabling triplet loss
 
     # test
     cfg.test = CN()
