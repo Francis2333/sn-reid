@@ -282,6 +282,17 @@ To train the baseline model, run:
 python benchmarks/baseline/main.py --config-file benchmarks/baseline/configs/baseline_config.yaml
 ```
 
+Before launching the full run, validate the training path for two epochs on
+1% of the training actions:
+
+```
+python benchmarks/baseline/main.py --config-file benchmarks/baseline/configs/baseline_smoke_config.yaml
+```
+
+In the smoke-run log, `loss_t` should be nonzero from the first printed batch,
+all reported values should stay finite, and `feat_std` should not trend toward
+zero.
+
 Running this script will automatically download the dataset in the folder specified by the `data.root` config.
 
 Have a look at the YAML configuration file [baseline_config.yaml](benchmarks/baseline/configs/baseline_config.yaml) and related default configuration [default_config.py](benchmarks/baseline/default_config.py) for more information about the available options.
